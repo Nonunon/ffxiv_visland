@@ -38,6 +38,8 @@ public class GatherWindow : Window {
     private bool _searchChanged;
     private readonly HashSet<string> _openGroups = [];
     private HashSet<string> _preSearchOpenGroups = [];
+    // shared x offset so the Mount and Search inputs line up
+    private static float SidebarInputX => ImGui.GetCursorStartPos().X + Math.Max(ImGui.CalcTextSize("Mount:").X, ImGui.CalcTextSize("Search:").X) + ImGui.GetStyle().ItemSpacing.X;
     private List<Route> VisibleRoutes => searchString.Length > 0 ? _filteredRoutes : RouteDB.Routes;
     private FontAwesomeIcon PlayIcon => Exec.CurrentRoute != null && !Exec.Paused ? FontAwesomeIcon.Pause : FontAwesomeIcon.Play;
     private string PlayTooltip => Exec.CurrentRoute == null ? "Start Route" : Exec.Paused ? "Resume Route" : "Pause Route";
@@ -133,13 +135,12 @@ public class GatherWindow : Window {
 
             DrawMountSelector();
 
-            ImGui.TextV("Search: ");
-            ImGui.SameLine();
+            ImGui.TextV("Search:");
+            ImGui.SameLine(SidebarInputX);
             ImGui.SetNextItemWidth(-1);
             var wasSearching = searchString.Length > 0;
             if (ImGui.InputText("###RouteSearch", ref searchString, 500)) {
-                // remember which folders the user had open so clearing the search puts them back
-                if (!wasSearching)
+                if (!wasSearching) // restored when the search is cleared
                     _preSearchOpenGroups = [.. _openGroups];
                 _searchChanged = true;
                 RefreshFilteredRoutes();
@@ -156,12 +157,11 @@ public class GatherWindow : Window {
                 var groups = GetGroups(RouteDB, true);
                 foreach (var group in groups) {
                     var matches = matchCounts.GetValueOrDefault(group);
-                    // on each search edit, open folders with hits and close the rest; on clear, restore the old layout
-                    if (_searchChanged)
+                    if (_searchChanged) // open groups with hits, or restore the pre-search layout
                         ImGui.SetNextItemOpen(searching ? matches > 0 : _preSearchOpenGroups.Contains(group), ImGuiCond.Always);
-                    var label = searching ? $"{group} ({matches})###{groups.IndexOf(group)}" : $"{group}###{groups.IndexOf(group)}";
-                    var color = searching && matches == 0 ? ImGui.GetColorU32(ImGuiCol.TextDisabled) : 0xffffffff;
-                    foreach (var _ in _tree.Node(label, color: color, contextMenu: () => ContextMenuGroup(group))) {
+                    var groupLabel = searching ? $"{group} ({matches})" : group;
+                    var groupColor = searching && matches == 0 ? ImGui.GetColorU32(ImGuiCol.TextDisabled) : 0xffffffff;
+                    foreach (var _ in _tree.Node($"{groupLabel}###{groups.IndexOf(group)}", color: groupColor, contextMenu: () => ContextMenuGroup(group))) {
                         if (!searching)
                             _openGroups.Add(group);
                         for (var i = 0; i < VisibleRoutes.Count; i++) {
@@ -169,8 +169,7 @@ public class GatherWindow : Window {
                             var routeGroup = string.IsNullOrEmpty(route.Group) ? "None" : route.Group;
                             if (routeGroup == group) {
                                 var routeLabel = $"{route.Name} ({route.Waypoints.Count} steps)";
-                                if (searching) {
-                                    // draw the label ourselves so the matched part can be colored without a double-drawn overlay
+                                if (searching) { // label drawn by hand so the match can be colored
                                     var textPos = ImGui.GetCursorScreenPos();
                                     if (ImGui.Selectable($"###{i}", i == selectedRouteIndex, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetTextLineHeight())))
                                         selectedRouteIndex = i;
@@ -192,19 +191,27 @@ public class GatherWindow : Window {
         }
     }
 
-    // draws label at pos, with every search match inside its first searchableLength chars in gold and underlined
+    private void RefreshFilteredRoutes() {
+        _filteredRoutes.Clear();
+        if (searchString.Length == 0)
+            return;
+
+        _filteredRoutes.AddRange(RouteDB.Routes.Where(route => route.Name.Contains(searchString, StringComparison.CurrentCultureIgnoreCase) || route.Group.Contains(searchString, StringComparison.CurrentCultureIgnoreCase)));
+    }
+
+    // only the first searchableLength chars get matched, so the "(x steps)" suffix never lights up
     private void DrawHighlightedLabel(Vector2 pos, string label, int searchableLength) {
         var drawList = ImGui.GetWindowDrawList();
-        var normal = ImGui.GetColorU32(ImGuiCol.Text);
-        var gold = ImGui.GetColorU32(ImGuiColors.ParsedGold);
+        var textColor = ImGui.GetColorU32(ImGuiCol.Text);
+        var matchColor = ImGui.GetColorU32(ImGuiColors.ParsedGold);
         var underlineY = pos.Y + ImGui.GetTextLineHeight();
 
         void Segment(string text, bool match) {
             if (text.Length == 0) return;
             var width = ImGui.CalcTextSize(text).X;
-            drawList.AddText(pos, match ? gold : normal, text);
+            drawList.AddText(pos, match ? matchColor : textColor, text);
             if (match)
-                drawList.AddLine(new Vector2(pos.X, underlineY), new Vector2(pos.X + width, underlineY), gold);
+                drawList.AddLine(new Vector2(pos.X, underlineY), new Vector2(pos.X + width, underlineY), matchColor);
             pos.X += width;
         }
 
@@ -216,30 +223,6 @@ public class GatherWindow : Window {
             cursor = idx + searchString.Length;
         }
         Segment(label[cursor..], false);
-    }
-
-    private void RefreshFilteredRoutes() {
-        _filteredRoutes.Clear();
-        if (searchString.Length == 0)
-            return;
-
-        _filteredRoutes.AddRange(RouteDB.Routes.Where(route => route.Name.Contains(searchString, StringComparison.CurrentCultureIgnoreCase) || route.Group.Contains(searchString, StringComparison.CurrentCultureIgnoreCase)));
-    }
-
-    private static string MountName(uint mountId)
-        => mountId == 0 ? "Mount Roulette" : Mount.GetRow(mountId) is { } m ? CultureInfo.CurrentCulture.TextInfo.ToTitleCase(m.Singular.ToString()) : $"Unknown Mount #{mountId}";
-
-    private void DrawMountSelector() {
-        ImGui.TextV("Mount:  ");
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(-1);
-        // lazy, so the sheet is only walked while the combo is open
-        var mounts = new uint[] { 0 }.Concat(Mount.Get().Where(m => m.RowId != 0 && !m.Singular.IsEmpty && Player.IsMountUnlocked(m.RowId)).Select(m => m.RowId).OrderBy(MountName));
-        if (UICombo.SearchableCombo("###MountSelector", out uint id, MountName(RouteDB.MountId), mounts, MountName)) {
-            RouteDB.MountId = id;
-            RouteDB.NotifyModified();
-        }
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Mount used when a route needs one. Falls back to Mount Roulette if the mount isn't unlocked.");
     }
 
     internal static bool RapidImportEnabled = false;
@@ -260,6 +243,22 @@ public class GatherWindow : Window {
                 Service.Log.Error(e, "Rapid import failed");
             }
         }
+    }
+
+    private static string MountName(uint mountId)
+        => mountId == 0 ? "Mount Roulette" : Mount.GetRow(mountId) is { } m ? CultureInfo.CurrentCulture.TextInfo.ToTitleCase(m.Singular.ToString()) : $"Unknown Mount #{mountId}";
+
+    private void DrawMountSelector() {
+        ImGui.TextV("Mount:");
+        ImGui.SameLine(SidebarInputX);
+        ImGui.SetNextItemWidth(-1);
+        // lazy, the combo only enumerates it while open
+        var mounts = new uint[] { 0 }.Concat(Mount.Get().Where(m => m.RowId != 0 && !m.Singular.IsEmpty && Player.IsMountUnlocked(m.RowId)).Select(m => m.RowId).OrderBy(MountName));
+        if (UICombo.SearchableCombo("###MountSelector", out uint id, MountName(RouteDB.MountId), mounts, MountName)) {
+            RouteDB.MountId = id;
+            RouteDB.NotifyModified();
+        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Mount to Use on Routes (falls back to Mount Roulette if not unlocked)");
     }
 
     private void DrawRouteSettingsPopup() {

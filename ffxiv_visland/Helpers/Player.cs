@@ -59,7 +59,6 @@ public static unsafe class Player {
             ExecuteActionSafe(ActionType.GeneralAction, 24);
     }
 
-    public static bool IsMountUnlocked(uint mountId) => PlayerState.Instance()->IsMountUnlocked(mountId);
     public static void Dismount() => ExecuteActionSafe(ActionType.GeneralAction, 23);
     public static void Jump() => ExecuteActionSafe(ActionType.GeneralAction, 2);
 
@@ -90,6 +89,8 @@ public static unsafe class Player {
 
     public static bool HasFood(uint foodId)
         => InventoryManager.Instance()->GetInventoryItemCount(foodId) > 0 || InventoryManager.Instance()->GetInventoryItemCount(foodId, true) > 0;
+
+    public static bool IsMountUnlocked(uint mountId) => PlayerState.Instance()->IsMountUnlocked(mountId);
 
     private static void ExecuteActionSafe(ActionType type, uint id, uint extraParam = 0)
         => _action.Exec(() => ActionManager.Instance()->UseAction(type, id, extraParam: extraParam));
