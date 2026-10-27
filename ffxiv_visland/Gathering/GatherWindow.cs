@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using visland.Helpers;
@@ -127,6 +128,8 @@ public class GatherWindow : Window {
             ImGui.SameLine();
             RapidImport();
 
+            DrawMountSelector();
+
             ImGui.TextV("Search: ");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1);
@@ -164,6 +167,22 @@ public class GatherWindow : Window {
             return;
 
         _filteredRoutes.AddRange(RouteDB.Routes.Where(route => route.Name.Contains(searchString, StringComparison.CurrentCultureIgnoreCase) || route.Group.Contains(searchString, StringComparison.CurrentCultureIgnoreCase)));
+    }
+
+    private static string MountName(uint mountId)
+        => mountId == 0 ? "Mount Roulette" : Mount.GetRow(mountId) is { } m ? CultureInfo.CurrentCulture.TextInfo.ToTitleCase(m.Singular.ToString()) : $"Unknown Mount #{mountId}";
+
+    private void DrawMountSelector() {
+        ImGui.TextV("Mount:  ");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(-1);
+        // lazy, so the sheet is only walked while the combo is open
+        var mounts = new uint[] { 0 }.Concat(Mount.Get().Where(m => m.RowId != 0 && !m.Singular.IsEmpty && Player.IsMountUnlocked(m.RowId)).Select(m => m.RowId).OrderBy(MountName));
+        if (UICombo.SearchableCombo("###MountSelector", out uint id, MountName(RouteDB.MountId), mounts, MountName)) {
+            RouteDB.MountId = id;
+            RouteDB.NotifyModified();
+        }
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Mount used when a route needs one. Falls back to Mount Roulette if the mount isn't unlocked.");
     }
 
     internal static bool RapidImportEnabled = false;

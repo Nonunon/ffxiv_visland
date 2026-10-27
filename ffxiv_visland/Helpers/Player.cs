@@ -52,7 +52,14 @@ public static unsafe class Player {
             _action.Exec(() => AgentInventoryContext.Instance()->UseItem((uint)id + 1_000_000));
     }
 
-    public static void Mount() => ExecuteActionSafe(ActionType.GeneralAction, 24);
+    public static void Mount(uint mountId = 0) {
+        if (mountId != 0 && IsMountUnlocked(mountId))
+            ExecuteActionSafe(ActionType.Mount, mountId);
+        else
+            ExecuteActionSafe(ActionType.GeneralAction, 24);
+    }
+
+    public static bool IsMountUnlocked(uint mountId) => PlayerState.Instance()->IsMountUnlocked(mountId);
     public static void Dismount() => ExecuteActionSafe(ActionType.GeneralAction, 23);
     public static void Jump() => ExecuteActionSafe(ActionType.GeneralAction, 2);
 

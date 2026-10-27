@@ -86,6 +86,7 @@ public class GatherRouteDB : Configuration.Node {
     public bool AutoRetainerIntegration;
     public bool TeleportBetweenZones = true;
     public bool AutoGather;
+    public uint MountId; // 0 = Mount Roulette
 
     public override void Deserialize(JObject j, JsonSerializer ser) {
         Routes.Clear();
@@ -116,6 +117,7 @@ public class GatherRouteDB : Configuration.Node {
         RepairPercent = (float?)j["RepairPercent"] ?? 20;
         PurifyCollectables = (bool?)j["Desynth"] ?? false;
         GlobalFood = (int?)j["GlobalFood"] ?? 0;
+        MountId = (uint?)j["MountId"] ?? 0;
         // Intentionally ignore obsolete keys: Manual, GlobalManual, WasFlyingInManual,
         // LandDistance, PathFindCancellationTime, EmoteID, ActionID, ItemID, MobID, QuestID, ChatCommand, etc.
     }
@@ -145,6 +147,7 @@ public class GatherRouteDB : Configuration.Node {
             { "GlobalFood", GlobalFood },
             { "AutoRetainerIntegration", AutoRetainerIntegration },
             { "AutoGather", AutoGather },
+            { "MountId", MountId },
         };
     }
 

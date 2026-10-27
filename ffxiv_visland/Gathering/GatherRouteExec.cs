@@ -197,7 +197,7 @@ public class GatherRouteExec : IDisposable {
             if (Service.Navmesh.IsRunning()) {
                 if (wp.Movement == GatherRouteDB.Movement.MountNoFly && !Player.Mounted) {
                     SetState(State.Mounting);
-                    Player.Mount();
+                    Player.Mount(RouteDB.MountId);
                     return;
                 }
 
@@ -207,7 +207,7 @@ public class GatherRouteExec : IDisposable {
 
             if (wp.Movement != GatherRouteDB.Movement.Normal && !Player.Mounted && wp.Movement != GatherRouteDB.Movement.MountNoFly) {
                 SetState(State.Mounting);
-                Player.Mount();
+                Player.Mount(RouteDB.MountId);
                 return;
             }
 
@@ -235,7 +235,7 @@ public class GatherRouteExec : IDisposable {
 
             if (wp.Movement == GatherRouteDB.Movement.MountNoFly && !Player.Mounted) {
                 SetState(State.Mounting);
-                Player.Mount();
+                Player.Mount(RouteDB.MountId);
             }
 
             return;
