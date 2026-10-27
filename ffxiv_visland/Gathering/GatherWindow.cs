@@ -35,6 +35,9 @@ public class GatherWindow : Window {
 
     private string searchString = string.Empty;
     private readonly List<Route> _filteredRoutes = [];
+    private bool _searchChanged;
+    private readonly HashSet<string> _openGroups = [];
+    private HashSet<string> _preSearchOpenGroups = [];
     private List<Route> VisibleRoutes => searchString.Length > 0 ? _filteredRoutes : RouteDB.Routes;
     private FontAwesomeIcon PlayIcon => Exec.CurrentRoute != null && !Exec.Paused ? FontAwesomeIcon.Pause : FontAwesomeIcon.Play;
     private string PlayTooltip => Exec.CurrentRoute == null ? "Start Route" : Exec.Paused ? "Resume Route" : "Pause Route";
@@ -133,20 +136,47 @@ public class GatherWindow : Window {
             ImGui.TextV("Search: ");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.InputText("###RouteSearch", ref searchString, 500))
+            var wasSearching = searchString.Length > 0;
+            if (ImGui.InputText("###RouteSearch", ref searchString, 500)) {
+                // remember which folders the user had open so clearing the search puts them back
+                if (!wasSearching)
+                    _preSearchOpenGroups = [.. _openGroups];
+                _searchChanged = true;
                 RefreshFilteredRoutes();
+            }
 
             ImGui.Separator();
 
             using (ImRaii.Child("routes")) {
+                var searching = searchString.Length > 0;
+                var matchCounts = VisibleRoutes.GroupBy(r => r.Group).ToDictionary(g => g.Key, g => g.Count());
+                if (!searching)
+                    _openGroups.Clear();
+
                 var groups = GetGroups(RouteDB, true);
                 foreach (var group in groups) {
-                    foreach (var _ in _tree.Node($"{group}###{groups.IndexOf(group)}", contextMenu: () => ContextMenuGroup(group))) {
+                    var matches = matchCounts.GetValueOrDefault(group);
+                    // on each search edit, open folders with hits and close the rest; on clear, restore the old layout
+                    if (_searchChanged)
+                        ImGui.SetNextItemOpen(searching ? matches > 0 : _preSearchOpenGroups.Contains(group), ImGuiCond.Always);
+                    var label = searching ? $"{group} ({matches})###{groups.IndexOf(group)}" : $"{group}###{groups.IndexOf(group)}";
+                    var color = searching && matches == 0 ? ImGui.GetColorU32(ImGuiCol.TextDisabled) : 0xffffffff;
+                    foreach (var _ in _tree.Node(label, color: color, contextMenu: () => ContextMenuGroup(group))) {
+                        if (!searching)
+                            _openGroups.Add(group);
                         for (var i = 0; i < VisibleRoutes.Count; i++) {
                             var route = VisibleRoutes[i];
                             var routeGroup = string.IsNullOrEmpty(route.Group) ? "None" : route.Group;
                             if (routeGroup == group) {
-                                if (ImGui.Selectable($"{route.Name} ({route.Waypoints.Count} steps)###{i}", i == selectedRouteIndex))
+                                var routeLabel = $"{route.Name} ({route.Waypoints.Count} steps)";
+                                if (searching) {
+                                    // draw the label ourselves so the matched part can be colored without a double-drawn overlay
+                                    var textPos = ImGui.GetCursorScreenPos();
+                                    if (ImGui.Selectable($"###{i}", i == selectedRouteIndex, ImGuiSelectableFlags.None, new Vector2(0, ImGui.GetTextLineHeight())))
+                                        selectedRouteIndex = i;
+                                    DrawHighlightedLabel(textPos, routeLabel, route.Name.Length);
+                                }
+                                else if (ImGui.Selectable($"{routeLabel}###{i}", i == selectedRouteIndex))
                                     selectedRouteIndex = i;
                                 //if (ImRaii.ContextPopup($"{route.Name}{i}"))
                                 //{
@@ -157,8 +187,35 @@ public class GatherWindow : Window {
                         }
                     }
                 }
+                _searchChanged = false;
             }
         }
+    }
+
+    // draws label at pos, with every search match inside its first searchableLength chars in gold and underlined
+    private void DrawHighlightedLabel(Vector2 pos, string label, int searchableLength) {
+        var drawList = ImGui.GetWindowDrawList();
+        var normal = ImGui.GetColorU32(ImGuiCol.Text);
+        var gold = ImGui.GetColorU32(ImGuiColors.ParsedGold);
+        var underlineY = pos.Y + ImGui.GetTextLineHeight();
+
+        void Segment(string text, bool match) {
+            if (text.Length == 0) return;
+            var width = ImGui.CalcTextSize(text).X;
+            drawList.AddText(pos, match ? gold : normal, text);
+            if (match)
+                drawList.AddLine(new Vector2(pos.X, underlineY), new Vector2(pos.X + width, underlineY), gold);
+            pos.X += width;
+        }
+
+        var cursor = 0;
+        var searchable = label[..searchableLength];
+        for (var idx = searchable.IndexOf(searchString, StringComparison.OrdinalIgnoreCase); idx >= 0; idx = searchable.IndexOf(searchString, cursor, StringComparison.OrdinalIgnoreCase)) {
+            Segment(label[cursor..idx], false);
+            Segment(label.Substring(idx, searchString.Length), true);
+            cursor = idx + searchString.Length;
+        }
+        Segment(label[cursor..], false);
     }
 
     private void RefreshFilteredRoutes() {
